@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp, LogIn, LogOut, Loader, Send } from 'lucide-react';
+import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp, LogIn, LogOut, Loader, Timer as TimerIcon, Send } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, query, onSnapshot, addDoc, orderBy, serverTimestamp } from 'firebase/firestore'; // Added serverTimestamp and orderBy
@@ -132,21 +132,68 @@ const Card = ({ title, icon: Icon, children, className = '' }) => (
   </div>
 );
 
-// 1. Timer (Now supports Stopwatch)
+// 1. Timer (Now supports Stopwatch and Countdown)
 const Timer = () => {
+  const [mode, setMode] = useState('stopwatch'); // 'stopwatch' or 'timer'
   const [time, setTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
-  const [mode, setMode] = useState('stopwatch'); // 'stopwatch' or 'timer'
+  const [durationInput, setDurationInput] = useState(25); // Default 25 minutes for countdown
 
+  // Function to initialize time based on mode
+  const initializeTime = useCallback((currentMode) => {
+    // Reset time to the start value for the current mode
+    if (currentMode === 'timer') {
+      setTime(durationInput * 60);
+    } else {
+      setTime(0);
+    }
+    setIsRunning(false);
+  }, [durationInput]);
+
+  // Handle mode switch or duration change (resets timer/stopwatch)
+  useEffect(() => {
+    initializeTime(mode);
+  }, [mode, durationInput, initializeTime]);
+
+  // Interval logic (runs every second)
   useEffect(() => {
     let interval = null;
     if (isRunning) {
-      interval = setInterval(() => setTime(t => t + 1), 1000);
+      interval = setInterval(() => {
+        setTime(t => {
+          if (mode === 'stopwatch') {
+            return t + 1; // Increment for stopwatch
+          } else if (mode === 'timer') {
+            if (t <= 1) {
+              clearInterval(interval);
+              setIsRunning(false);
+              
+              // Simple sound notification for timer end
+              if (window.AudioContext) {
+                try {
+                  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                  const oscillator = audioCtx.createOscillator();
+                  oscillator.type = 'square';
+                  oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+                  oscillator.connect(audioCtx.destination);
+                  oscillator.start();
+                  oscillator.stop(audioCtx.currentTime + 0.5);
+                } catch (e) {
+                  console.warn("Audio playback failed.", e);
+                }
+              }
+              return 0; // Stop at 0
+            }
+            return t - 1; // Decrement for timer
+          }
+          return t;
+        });
+      }, 1000);
     } else {
       clearInterval(interval);
     }
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, mode]);
 
   const formatTime = (totalSeconds) => {
     const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
@@ -155,44 +202,60 @@ const Timer = () => {
     return `${h}:${m}:${s}`;
   };
   
-  const reset = () => { setIsRunning(false); setTime(0); };
+  const reset = () => { initializeTime(mode); };
 
   return (
     <Card title="Practice Timer" icon={Clock}>
       <div className="flex justify-center mb-4 space-x-2">
+        {/* Mode Switch Buttons */}
         <button onClick={() => setMode('stopwatch')} 
           className={`px-3 py-1 rounded-full text-sm font-semibold transition ${mode === 'stopwatch' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
           Stopwatch
         </button>
         <button onClick={() => setMode('timer')} 
           className={`px-3 py-1 rounded-full text-sm font-semibold transition ${mode === 'timer' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
-          Countdown (WIP)
+          Countdown
         </button>
       </div>
+      
+      {/* Duration Input for Countdown Mode */}
+      {mode === 'timer' && (
+        <div className="flex items-center justify-center mb-4">
+          <label htmlFor="duration-input" className="text-gray-400 mr-2 text-sm">Set Minutes:</label>
+          <input 
+            id="duration-input"
+            type="number" 
+            min="1" 
+            max="180" 
+            value={durationInput} 
+            onChange={(e) => setDurationInput(Math.max(1, Math.min(180, Number(e.target.value))))} 
+            // Reset time when input loses focus (applies new duration)
+            onBlur={() => initializeTime(mode)} 
+            className="w-20 p-2 bg-gray-700 rounded-lg text-white text-center border border-gray-600 focus:ring-1 focus:ring-indigo-400"
+          />
+        </div>
+      )}
 
       <div className="text-6xl md:text-7xl font-mono text-cyan-400 my-6 text-center tracking-tight">
         {formatTime(time)}
       </div>
       
-      {mode === 'stopwatch' && (
-        <div className="flex justify-center space-x-4">
-          <button 
-            onClick={() => setIsRunning(!isRunning)} 
-            className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full font-bold shadow-md transition duration-150 text-base md:text-lg"
-          >
-            {isRunning ? "Pause" : "Start"}
-          </button>
-          <button 
-            onClick={reset} 
-            className="flex-1 px-6 py-3 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white rounded-full font-bold shadow-md transition duration-150 text-base md:text-lg"
-          >
-            Reset
-          </button>
-        </div>
-      )}
-      {mode === 'timer' && (
-         <div className="text-center text-gray-400 py-3">Countdown feature coming soon!</div>
-      )}
+      <div className="flex justify-center space-x-4">
+        <button 
+          onClick={() => setIsRunning(!isRunning)} 
+          className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full font-bold shadow-md transition duration-150 text-base md:text-lg"
+          // Disable start/pause button if timer is at 0 in countdown mode
+          disabled={mode === 'timer' && time === 0 && !isRunning}
+        >
+          {isRunning ? "Pause" : "Start"}
+        </button>
+        <button 
+          onClick={reset} 
+          className="flex-1 px-6 py-3 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white rounded-full font-bold shadow-md transition duration-150 text-base md:text-lg"
+        >
+          Reset
+        </button>
+      </div>
     </Card>
   );
 };
