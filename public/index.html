@@ -3,20 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="https://placehold.co/16x16/000000/FFFFFF?text=🎵" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#1f2937" />
     <meta
       name="description"
       content="A practice companion with a metronome, timer, and music theory trainers."
     />
     <title>Practice Companion</title>
+    
+    <!-- 
+      *** CRITICAL FIX: Tailwind CSS CDN Link ***
+      This is the missing piece that tells the browser how to style your app.
+    -->
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="bg-gray-900">
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <!-- 
-      This is the crucial 'root' div. The entire React application 
-      from App.jsx will be rendered inside this element. 
-    -->
+    
     <div id="root"></div>
   </body>
 </html>
