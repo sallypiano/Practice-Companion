@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp, LogIn, LogOut, Loader, Timer as TimerIcon } from 'lucide-react';
+import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp, LogIn, LogOut, Loader, Timer as TimerIcon, Send } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, query, onSnapshot, addDoc, orderBy, serverTimestamp } from 'firebase/firestore'; // Added serverTimestamp and orderBy
 
 // --- CONFIG AND INITIALIZATION ---
+/* global __app_id __firebase_config __initial_auth_token */
+
 // Global variables provided by the Canvas environment
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
@@ -56,10 +58,24 @@ const PITCH_NOTES = NOTES.map((note, index) => ({
   { name: "C5", midi: 72 }
 ]);
 
+// --- UTILITIES ---
+const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'Loading...';
+    // Check if the timestamp is a Firestore Timestamp object
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('en-US', {
+        month: 'short', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit'
+    });
+};
+
+
 // --- COMPONENTS ---
 
-const Card = ({ title, icon: Icon, children }) => (
-  <div className="relative bg-gray-800/70 p-6 rounded-3xl shadow-2xl border border-gray-700/50 transition duration-300 hover:bg-gray-700/80 hover:shadow-indigo-900/50 overflow-hidden">
+const Card = ({ title, icon: Icon, children, className = '' }) => (
+  <div className={`relative bg-gray-800/70 p-6 rounded-3xl shadow-2xl border border-gray-700/50 transition duration-300 hover:bg-gray-700/80 hover:shadow-indigo-900/50 overflow-hidden ${className}`}>
     {/* Decorative corner accent */}
     <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-3xl bg-indigo-500/20 opacity-30"></div>
     
@@ -359,6 +375,147 @@ const SymbolsTrainer = () => {
   );
 };
 
+// 6. Progress Tracker (Firebase Integration)
+const ProgressTracker = ({ user, isAuthReady }) => {
+    const [notes, setNotes] = useState([]);
+    const [newNote, setNewNote] = useState('');
+    const [isLoadingNotes, setIsLoadingNotes] = useState(true);
+
+    // Fetch notes in real-time
+    useEffect(() => {
+        if (!isAuthReady || !user || !db) {
+            setNotes([]);
+            setIsLoadingNotes(false);
+            return;
+        }
+
+        const userId = user.uid;
+        // Path: /artifacts/{appId}/users/{userId}/practiceNotes
+        const notesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'practiceNotes');
+        // Sort by timestamp descending (newest first)
+        const notesQuery = query(notesCollectionRef, orderBy('createdAt', 'desc'));
+
+        setIsLoadingNotes(true);
+        
+        // Setup real-time listener
+        const unsubscribe = onSnapshot(notesQuery, (snapshot) => {
+            const fetchedNotes = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setNotes(fetchedNotes);
+            setIsLoadingNotes(false);
+        }, (error) => {
+            console.error("Error fetching notes:", error);
+            setIsLoadingNotes(false);
+        });
+
+        // Cleanup the listener on component unmount or dependency change
+        return () => unsubscribe();
+    }, [user, isAuthReady]);
+
+
+    const handleAddNote = async (e) => {
+        e.preventDefault();
+        if (!newNote.trim() || !user || !db) return;
+
+        const userId = user.uid;
+        const notesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'practiceNotes');
+        
+        try {
+            await addDoc(notesCollectionRef, {
+                content: newNote.trim(),
+                createdAt: serverTimestamp(),
+            });
+            setNewNote('');
+        } catch (error) {
+            console.error("Error adding document: ", error);
+        }
+    };
+
+    if (!isAuthReady) {
+        return (
+            <Card title="Progress Tracker" icon={TrendingUp}>
+                <div className="text-center py-8">
+                    <Loader className="w-6 h-6 animate-spin mx-auto text-indigo-400" />
+                    <p className="text-gray-400 mt-2">Initializing services...</p>
+                </div>
+            </Card>
+        );
+    }
+    
+    if (!user) {
+        return (
+            <Card title="Progress Tracker" icon={TrendingUp}>
+                <div className="h-40 flex flex-col justify-center text-center">
+                    <p className="text-gray-400 text-lg">
+                        Sign in (top right) to save your practice notes and goals here.
+                    </p>
+                </div>
+            </Card>
+        );
+    }
+    
+    return (
+        <Card title="Practice Log" icon={TrendingUp} className="lg:col-span-2 xl:col-span-2">
+            <form onSubmit={handleAddNote} className="flex space-x-2 mb-4">
+                <input
+                    type="text"
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    placeholder="What did you work on today?"
+                    className="flex-grow p-3 bg-gray-700 rounded-full text-white placeholder-gray-400 border border-gray-600 focus:ring-2 focus:ring-cyan-500 outline-none"
+                    disabled={!user}
+                />
+                <button
+                    type="submit"
+                    className="p-3 bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 rounded-full text-white transition duration-150 shadow-md disabled:opacity-50"
+                    disabled={!newNote.trim() || !user}
+                >
+                    <Send className="w-5 h-5" />
+                </button>
+            </form>
+
+            <h3 className="text-xl font-semibold mb-2 text-indigo-300">Recent Notes</h3>
+            <div className="h-64 overflow-y-auto pr-2 custom-scrollbar">
+                {isLoadingNotes ? (
+                    <div className="text-center py-4 text-gray-400">Loading notes...</div>
+                ) : notes.length === 0 ? (
+                    <div className="text-center py-4 text-gray-500 border border-dashed border-gray-700 rounded-lg mt-2">
+                        No notes yet! Add your first practice entry above.
+                    </div>
+                ) : (
+                    <ul className="space-y-3">
+                        {notes.map((note) => (
+                            <li key={note.id} className="p-3 bg-gray-700 rounded-xl shadow-lg border border-gray-600">
+                                <p className="text-gray-200 break-words mb-1">{note.content}</p>
+                                <p className="text-xs text-gray-400 font-mono italic">
+                                    {formatTimestamp(note.createdAt)}
+                                </p>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            <style jsx="true">{`
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 8px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: #374151; /* gray-700 */
+                    border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: #06b6d4; /* cyan-500 */
+                    border-radius: 10px;
+                }
+            `}</style>
+        </Card>
+    );
+};
+
+
 // --- AUTH COMPONENT ---
 const AuthStatus = ({ user, isAuthReady }) => {
     const handleLogin = async () => {
@@ -483,19 +640,7 @@ const App = () => {
         <SymbolsTrainer />
         
         {/* Progress Tracker / Notes */}
-        <Card title="Progress Tracker" icon={TrendingUp}>
-          <div className="h-24 flex flex-col justify-center text-center">
-            {isAuthReady && user ? (
-              <p className="text-gray-400 text-lg">
-                You are authenticated! User ID is displayed above. Let's build the notes feature next.
-              </p>
-            ) : (
-              <p className="text-gray-400 text-lg">
-                Sign in to save your session data and practice goals here.
-              </p>
-            )}
-          </div>
-        </Card>
+        <ProgressTracker user={user} isAuthReady={isAuthReady} />
       </main>
       
       {/* Footer */}
