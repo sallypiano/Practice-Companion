@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp, LogIn, LogOut, Loader, Timer as TimerIcon, Send } from 'lucide-react';
+import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp, LogIn, LogOut, Loader, Send } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, query, onSnapshot, addDoc, orderBy, serverTimestamp } from 'firebase/firestore'; // Added serverTimestamp and orderBy
