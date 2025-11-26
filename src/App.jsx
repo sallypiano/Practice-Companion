@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp } from 'lucide-react';
+import { RefreshCw, Zap, Music, BookOpen, Clock, HeartHandshake, TrendingUp } from 'lucide-react';
 
 // --- APP DATA ---
 
